@@ -73,14 +73,16 @@ function getCacheVersion(paths, compressionMethod) {
         .digest('hex');
 }
 exports.getCacheVersion = getCacheVersion;
-function getCacheEntryBlob(connectionString, blobContainerName, keys, paths) {
+function getCacheEntryBlob(connectionString, blobContainerName, keys) {
     var e_1, _a;
+    var _b;
     return __awaiter(this, void 0, void 0, function* () {
         const primaryKey = keys[0];
         const notPrimaryKey = keys.slice(1);
         const blobService = storage_blob_1.BlobServiceClient.fromConnectionString(connectionString);
         const blobContainer = blobService.getContainerClient(blobContainerName);
         const blobList = blobContainer.listBlobsFlat();
+        let matchedPrefix = new Array();
         try {
             for (var blobList_1 = __asyncValues(blobList), blobList_1_1; blobList_1_1 = yield blobList_1.next(), !blobList_1_1.done;) {
                 const blob = blobList_1_1.value;
@@ -97,6 +99,9 @@ function getCacheEntryBlob(connectionString, blobContainerName, keys, paths) {
                             creationTime: blob.properties.lastModified.toISOString()
                         };
                     }
+                    if ((_b = blob.name) === null || _b === void 0 ? void 0 : _b.startsWith(key)) {
+                        matchedPrefix.push(blob);
+                    }
                 }
             }
         }
@@ -107,13 +112,35 @@ function getCacheEntryBlob(connectionString, blobContainerName, keys, paths) {
             }
             finally { if (e_1) throw e_1.error; }
         }
-        return null;
+        if (matchedPrefix.length === 0) {
+            return null;
+        }
+        matchedPrefix.sort(function (i, j) {
+            var _a, _b, _c, _d, _e, _f;
+            if ((i.properties.lastModified == undefined) || (j.properties.lastModified == undefined)) {
+                return 0;
+            }
+            if (((_a = i.properties.lastModified) === null || _a === void 0 ? void 0 : _a.getTime()) === ((_b = j.properties.lastModified) === null || _b === void 0 ? void 0 : _b.getTime())) {
+                return 0;
+            }
+            if (((_c = i.properties.lastModified) === null || _c === void 0 ? void 0 : _c.getTime()) > ((_d = j.properties.lastModified) === null || _d === void 0 ? void 0 : _d.getTime())) {
+                return -1;
+            }
+            if (((_e = i.properties.lastModified) === null || _e === void 0 ? void 0 : _e.getTime()) < ((_f = j.properties.lastModified) === null || _f === void 0 ? void 0 : _f.getTime())) {
+                return 1;
+            }
+            return 0;
+        });
+        return {
+            cacheKey: matchedPrefix[0].name,
+            creationTime: matchedPrefix[0].properties.lastModified.toISOString()
+        };
     });
 }
 function getCacheEntry(keys, paths, options, blobContainerName, connectionString) {
     return __awaiter(this, void 0, void 0, function* () {
         if (blobContainerName && connectionString) {
-            return yield getCacheEntryBlob(connectionString, blobContainerName, keys, paths);
+            return yield getCacheEntryBlob(connectionString, blobContainerName, keys);
         }
         const httpClient = createHttpClient();
         const version = getCacheVersion(paths, options === null || options === void 0 ? void 0 : options.compressionMethod);

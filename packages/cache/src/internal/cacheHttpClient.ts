@@ -37,7 +37,8 @@ import {
 } from './requestUtils'
 import {
   BlobServiceClient,
-  BlockBlobClient
+  BlockBlobClient,
+  BlobItem
 } from '@azure/storage-blob'
 
 const versionSalt = '1.0'
@@ -101,13 +102,13 @@ async function getCacheEntryBlob(
   connectionString: string,
   blobContainerName: string,
   keys: string[],
-  paths: string[]
 ): Promise<ArtifactCacheEntry | null> {
   const primaryKey = keys[0]
   const notPrimaryKey = keys.slice(1)
   const blobService = BlobServiceClient.fromConnectionString(connectionString)
   const blobContainer = blobService.getContainerClient(blobContainerName)
   const blobList = blobContainer.listBlobsFlat()
+  let matchedPrefix: BlobItem[] = new Array();
 
   for await (const blob of blobList) {
     if (blob.name === primaryKey) {
@@ -124,10 +125,29 @@ async function getCacheEntryBlob(
           creationTime: blob.properties.lastModified.toISOString()
         }
       }
+      if (blob.name?.startsWith(key)) {
+        matchedPrefix.push(blob)
+      }
     }
   }
 
-  return null
+  if(matchedPrefix.length === 0)
+  {
+    return null
+  }
+
+  matchedPrefix.sort(function(i, j) {
+    if ((i.properties.lastModified == undefined) || (j.properties.lastModified == undefined)) { return 0 }
+    if (i.properties.lastModified?.getTime() === j.properties.lastModified?.getTime()) { return 0 }
+    if (i.properties.lastModified?.getTime() > j.properties.lastModified?.getTime()) { return -1 }
+    if (i.properties.lastModified?.getTime() < j.properties.lastModified?.getTime()) { return 1 }
+    return 0
+  })
+
+  return {
+    cacheKey: matchedPrefix[0].name,
+    creationTime: matchedPrefix[0].properties.lastModified.toISOString()
+  }
 }
 
 export async function getCacheEntry(
@@ -141,8 +161,7 @@ export async function getCacheEntry(
     return await getCacheEntryBlob(
       connectionString,
       blobContainerName,
-      keys,
-      paths
+      keys
     )
   }
 
